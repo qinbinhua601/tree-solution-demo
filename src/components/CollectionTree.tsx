@@ -2,6 +2,8 @@
 // 树容器：渲染整棵树，提供"新建根目录文件夹"入口
 
 import React, { useRef, useState } from 'react';
+import type { ItemInstance } from '@headless-tree/core';
+import type { NodeData } from '../api/collection';
 import { useCollectionTree } from '../hooks/useCollectionTree';
 import { useInfiniteScrollTrigger } from '../hooks/useInfiniteScrollTrigger';
 import { TreeItem } from './TreeItem';
@@ -9,10 +11,9 @@ import { TreeItem } from './TreeItem';
 export function CollectionTree() {
   const {
     tree,
-    hasMoreRootItems,
     isLoadingMoreRootItems,
     loadMoreRootItems,
-    totalRootCount,
+    visibleRootCount,
     addRootFolder,
     addSubFolder,
     removeFolder,
@@ -24,6 +25,11 @@ export function CollectionTree() {
   const [newFolderName, setNewFolderName] = useState('');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const rootItem = tree.getRootItem();
+  const rootItems = rootItem.getChildren();
+  const visibleRootItems = rootItems.slice(0, visibleRootCount);
+  const totalRootCount = rootItems.length;
+  const hasMoreRootItems = totalRootCount > visibleRootCount;
 
   const handleAddRoot = async () => {
     const name = newFolderName.trim();
@@ -64,8 +70,8 @@ export function CollectionTree() {
           {...tree.getContainerProps('文档收藏夹')}
           className="tree-container"
         >
-          {tree.getItems().map((item) => (
-            <TreeItem
+          {visibleRootItems.map((item) => (
+            <NestedTreeItem
               key={item.getKey()}
               item={item}
               onAddSubFolder={addSubFolder}
@@ -100,5 +106,44 @@ export function CollectionTree() {
         </div>
       </div>
     </div>
+  );
+}
+
+interface NestedTreeItemProps {
+  item: ItemInstance<NodeData>;
+  onAddSubFolder: (parentId: string, name: string) => Promise<void>;
+  onRemoveFolder: (item: ItemInstance<NodeData>) => Promise<void>;
+  onRemoveFile: (item: ItemInstance<NodeData>) => Promise<void>;
+  onAddFile: (parentId: string, name: string) => Promise<void>;
+}
+
+function NestedTreeItem({
+  item,
+  onAddSubFolder,
+  onRemoveFolder,
+  onRemoveFile,
+  onAddFile,
+}: NestedTreeItemProps) {
+  return (
+    <>
+      <TreeItem
+        item={item}
+        onAddSubFolder={onAddSubFolder}
+        onRemoveFolder={onRemoveFolder}
+        onRemoveFile={onRemoveFile}
+        onAddFile={onAddFile}
+      />
+
+      {item.isFolder() && item.isExpanded() && item.getChildren().map((child) => (
+        <NestedTreeItem
+          key={child.getKey()}
+          item={child}
+          onAddSubFolder={onAddSubFolder}
+          onRemoveFolder={onRemoveFolder}
+          onRemoveFile={onRemoveFile}
+          onAddFile={onAddFile}
+        />
+      ))}
+    </>
   );
 }

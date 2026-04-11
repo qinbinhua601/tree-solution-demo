@@ -1,7 +1,7 @@
 // src/hooks/useCollectionTree.ts
 // 树数据逻辑 hook：封装 asyncDataLoader、拖拽、CRUD 操作
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -27,7 +27,6 @@ import {
   createFile,
   type NodeData,
 } from '../api/collection';
-import { useIncrementalPagination } from './useIncrementalPagination';
 
 export const ROOT_ID = 'root';
 const ROOT_PAGE_SIZE = 10;
@@ -40,10 +39,10 @@ export function useCollectionTree() {
     [ROOT_ID]: { id: ROOT_ID, type: 'folder', name: 'root' },
   });
   const rootLoadedRef = useRef(false);
-  const rootPagination = useIncrementalPagination<NodeData>({
-    initialPageSize: ROOT_PAGE_SIZE,
-    loadMoreDelay: LOAD_MORE_DELAY,
-  });
+  const loadingMoreRef = useRef(false);
+  const [visibleRootCount, setVisibleRootCount] = useState(ROOT_PAGE_SIZE);
+  const [, bumpRootVersion] = useState(0);
+  const [isLoadingMoreRootItems, setIsLoadingMoreRootItems] = useState(false);
 
   const writeItemCache = useCallback((data: NodeData) => {
     itemDataCacheRef.current[data.id] = data;
@@ -60,16 +59,6 @@ export function useCollectionTree() {
     removeItemCache(item.getId());
   }, [removeItemCache]);
 
-  const syncVisibleRootChildren = useCallback((tree: TreeInstance<NodeData>, nextCount: number) => {
-    if (!rootLoadedRef.current) return;
-    const root = tree.getItemInstance(ROOT_ID);
-    const visibleIds = rootPagination.itemsRef.current
-      .slice(0, nextCount)
-      .map((node) => node.id);
-    root.updateCachedChildrenIds(visibleIds);
-    tree.rebuildTree();
-  }, [rootPagination.itemsRef]);
-
   // ── dataLoader ──────────────────────────────────────────────────────────────
   const dataLoader = {
     /** 获取节点自身数据（已在 getChildrenWithData 中写入缓存，这里只做兜底） */
@@ -85,11 +74,10 @@ export function useCollectionTree() {
       const nodes = await fetchChildren(folderId);
       nodes.forEach(writeItemCache);
       if (itemId === ROOT_ID) {
-        rootPagination.setItems(nodes, { resetVisibleCount: true });
         rootLoadedRef.current = true;
-        return rootPagination
-          .getVisibleItems(nodes)
-          .map((n) => ({ id: n.id, data: n }));
+        setVisibleRootCount(ROOT_PAGE_SIZE);
+        bumpRootVersion((version) => version + 1);
+        return nodes.map((n) => ({ id: n.id, data: n }));
       }
       return nodes.map((n) => ({ id: n.id, data: n }));
     },
@@ -117,13 +105,13 @@ export function useCollectionTree() {
         if (sourceParentId === targetFolderId) return;
 
         if (sourceParentId === ROOT_ID) {
-          rootPagination.removeItems((node) => node.id === item.getId());
+          bumpRootVersion((version) => version + 1);
         }
 
         if (targetFolderId === ROOT_ID) {
           const nextData = item.getItemData();
           writeItemCache(nextData);
-          rootPagination.appendItem(nextData);
+          bumpRootVersion((version) => version + 1);
         }
       });
 
@@ -139,10 +127,9 @@ export function useCollectionTree() {
         },
       );
 
-      syncVisibleRootChildren(tree, rootPagination.visibleCountRef.current);
       tree.rebuildTree();
     },
-    [rootPagination, syncVisibleRootChildren, writeItemCache],
+    [writeItemCache],
   );
 
   // ── canDrop：只允许拖入文件夹 ────────────────────────────────────────────────
@@ -198,16 +185,20 @@ export function useCollectionTree() {
   // 保存引用
   treeRef.current = tree;
 
-  useEffect(() => {
-    syncVisibleRootChildren(tree, rootPagination.visibleCount);
-  }, [rootPagination.visibleCount, syncVisibleRootChildren, tree]);
-
   const loadMoreRootItems = useCallback(async () => {
-    if (!rootLoadedRef.current) return;
-    await rootPagination.loadMore();
-  }, [rootPagination]);
+    const root = treeRef.current?.getItemInstance(ROOT_ID);
+    if (!rootLoadedRef.current || !root || loadingMoreRef.current) return;
+    if (visibleRootCount >= root.getChildren().length) return;
 
-  const hasMoreRootItems = rootLoadedRef.current && rootPagination.hasMore;
+    loadingMoreRef.current = true;
+    setIsLoadingMoreRootItems(true);
+
+    await new Promise((resolve) => window.setTimeout(resolve, LOAD_MORE_DELAY));
+    setVisibleRootCount((count) => Math.min(count + ROOT_PAGE_SIZE, root.getChildren().length));
+
+    loadingMoreRef.current = false;
+    setIsLoadingMoreRootItems(false);
+  }, [visibleRootCount]);
 
   // ── CRUD 操作 ────────────────────────────────────────────────────────────────
 
@@ -218,12 +209,13 @@ export function useCollectionTree() {
     const root = tree.getItemInstance(ROOT_ID);
     const oldIds = root.getChildren().map((c) => c.getId());
     writeItemCache(newData);
-    rootPagination.appendItem(newData, { reveal: true });
     root.updateCachedData(itemDataCacheRef.current[ROOT_ID]);
     tree.getItemInstance(newId).updateCachedData(newData);
     root.updateCachedChildrenIds([...oldIds, newId]);
+    setVisibleRootCount((count) => Math.max(count + 1, ROOT_PAGE_SIZE));
+    bumpRootVersion((version) => version + 1);
     tree.rebuildTree();
-  }, [rootPagination, tree, writeItemCache]);
+  }, [tree, writeItemCache]);
 
   /** 新建子文件夹到指定父文件夹 */
   const addSubFolder = useCallback(
@@ -248,9 +240,7 @@ export function useCollectionTree() {
       if (!parent) return;
       removeItemCacheTree(item);
       if (parent.getId() === ROOT_ID) {
-        const nextItems = rootPagination.removeItems((node) => node.id === item.getId());
-        const nextCount = Math.min(rootPagination.visibleCountRef.current, nextItems.length);
-        syncVisibleRootChildren(tree, nextCount);
+        bumpRootVersion((version) => version + 1);
       }
       const newIds = parent.getChildren()
         .filter((c) => c.getId() !== item.getId())
@@ -258,7 +248,7 @@ export function useCollectionTree() {
       parent.updateCachedChildrenIds(newIds);
       tree.rebuildTree();
     },
-    [removeItemCacheTree, rootPagination, syncVisibleRootChildren, tree],
+    [removeItemCacheTree, tree],
   );
 
   /** 删除文件 */
@@ -269,9 +259,7 @@ export function useCollectionTree() {
       if (!parent) return;
       removeItemCache(item.getId());
       if (parent.getId() === ROOT_ID) {
-        const nextItems = rootPagination.removeItems((node) => node.id === item.getId());
-        const nextCount = Math.min(rootPagination.visibleCountRef.current, nextItems.length);
-        syncVisibleRootChildren(tree, nextCount);
+        bumpRootVersion((version) => version + 1);
       }
       const newIds = parent.getChildren()
         .filter((c) => c.getId() !== item.getId())
@@ -279,7 +267,7 @@ export function useCollectionTree() {
       parent.updateCachedChildrenIds(newIds);
       tree.rebuildTree();
     },
-    [removeItemCache, rootPagination, syncVisibleRootChildren, tree],
+    [removeItemCache, tree],
   );
 
   /** 新建文档（调用方自行提供 fileId 和 name，接口由业务层处理） */
@@ -299,11 +287,9 @@ export function useCollectionTree() {
 
   return {
     tree,
-    hasMoreRootItems,
-    isLoadingMoreRootItems: rootPagination.isLoadingMore,
+    isLoadingMoreRootItems,
     loadMoreRootItems,
-    visibleRootCount: rootPagination.visibleCount,
-    totalRootCount: rootPagination.totalCount,
+    visibleRootCount,
     addRootFolder,
     addSubFolder,
     removeFolder,
