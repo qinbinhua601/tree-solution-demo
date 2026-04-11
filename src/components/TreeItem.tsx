@@ -74,38 +74,40 @@ export function TreeItem({
       <div
         {...item.getProps()}
         style={{
-          paddingLeft: level * 16 + 8,
+          paddingLeft: level * 18 + 12,
+          paddingRight: 12,
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
-          height: 32,
+          gap: 8,
+          minHeight: 40,
           cursor: 'pointer',
-          background: item.isDragTarget() ? '#e8f0fe' : 'transparent',
-          borderRadius: 4,
+          background: item.isDragTarget() ? '#e8f1ff' : 'transparent',
+          borderRadius: 10,
           userSelect: 'none',
+          transition: 'background 120ms ease',
         }}
         onContextMenu={handleContextMenu}
         onDoubleClick={() => isFolder && item.startRenaming?.()}
       >
         {/* 展开箭头 */}
         {isFolder && (
-          <span style={{ width: 12, fontSize: 10, color: '#666' }}>
+          <span style={{ width: 14, fontSize: 11, color: '#7a8699' }}>
             {isLoading ? '…' : item.isExpanded() ? '▾' : '▸'}
           </span>
         )}
 
         {/* 图标 */}
-          <span>{isFolder ? '📁' : '📄'}</span>
+        <span style={{ fontSize: 16 }}>{isFolder ? '📁' : '📄'}</span>
 
         {/* 名称 / 重命名输入框 */}
         {isRenaming ? (
           <input
             {...item.getRenameInputProps?.()}
             autoFocus
-            style={{ flex: 1, fontSize: 13, border: '1px solid #aaa', borderRadius: 3, padding: '0 4px', color: '#111827', background: '#fff' }}
+            style={{ flex: 1, fontSize: 14, border: '1px solid #c7d2e1', borderRadius: 8, padding: '6px 8px', color: '#111827', background: '#fff' }}
           />
         ) : (
-          <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#111827' }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#152033' }}>
             {data?.name}
           </span>
         )}
@@ -116,14 +118,15 @@ export function TreeItem({
         <div
           style={{
             position: 'absolute',
-            left: level * 16 + 8,
-            top: 32,
+            left: level * 18 + 12,
+            top: 44,
             background: '#fff',
-            border: '1px solid #ddd',
-            borderRadius: 4,
-            boxShadow: '0 2px 8px rgba(0,0,0,.15)',
+            border: '1px solid #d6dfeb',
+            borderRadius: 12,
+            boxShadow: '0 18px 40px rgba(16, 24, 40, 0.12)',
             zIndex: 100,
-            minWidth: 140,
+            minWidth: 160,
+            overflow: 'hidden',
           }}
         >
           {isFolder && (
@@ -153,12 +156,12 @@ function MenuItem({
     <div
       onClick={onClick}
       style={{
-        padding: '6px 12px',
-        fontSize: 13,
+        padding: '10px 14px',
+        fontSize: 14,
         cursor: 'pointer',
         color: danger ? '#d32f2f' : '#333',
       }}
-      onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = '#f5f5f5')}
+      onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = '#f4f7fb')}
       onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
     >
       {label}
