@@ -1,15 +1,29 @@
 // src/components/CollectionTree.tsx
 // 树容器：渲染整棵树，提供"新建根目录文件夹"入口
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useCollectionTree } from '../hooks/useCollectionTree';
 import { TreeItem } from './TreeItem';
 
 export function CollectionTree() {
-  const { tree, addRootFolder, addSubFolder, removeFolder, removeFile, addFile } =
+  const {
+    tree,
+    hasMoreRootItems,
+    isLoadingMoreRootItems,
+    loadMoreRootItems,
+    visibleRootCount,
+    totalRootCount,
+    addRootFolder,
+    addSubFolder,
+    removeFolder,
+    removeFile,
+    addFile,
+  } =
     useCollectionTree();
 
   const [newFolderName, setNewFolderName] = useState('');
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const handleAddRoot = async () => {
     const name = newFolderName.trim();
@@ -18,51 +32,86 @@ export function CollectionTree() {
     setNewFolderName('');
   };
 
+  useEffect(() => {
+    const root = scrollRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target || !hasMoreRootItems) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreRootItems();
+        }
+      },
+      {
+        root,
+        rootMargin: '0px 0px 120px 0px',
+      },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMoreRootItems, loadMoreRootItems, visibleRootCount]);
+
   return (
-    <div style={{ fontFamily: 'sans-serif', width: 280, color: '#1f2937' }}>
+    <div className="tree-shell">
       {/* 工具栏：新建根目录文件夹 */}
-      <div style={{ display: 'flex', gap: 6, padding: '8px 4px', borderBottom: '1px solid #eee' }}>
+      <div className="tree-toolbar">
         <input
+          className="tree-input"
           value={newFolderName}
           onChange={(e) => setNewFolderName(e.target.value)}
           placeholder="新建根目录文件夹…"
           onKeyDown={(e) => e.key === 'Enter' && handleAddRoot()}
-          style={{ flex: 1, fontSize: 13, padding: '2px 6px', border: '1px solid #ccc', borderRadius: 3, color: '#111827', background: '#fff' }}
         />
         <button
+          className="tree-add-button"
           onClick={handleAddRoot}
-          style={{ fontSize: 13, padding: '2px 8px', borderRadius: 3, border: '1px solid #ccc', cursor: 'pointer', color: '#111827', background: '#fff' }}
         >
-          +
+          新建
         </button>
       </div>
 
       {/* 树容器 */}
-      <div
-        {...tree.getContainerProps('文档收藏夹')}
-        style={{ outline: 'none', paddingTop: 4, position: 'relative' }}
-      >
-        {tree.getItems().map((item) => (
-          <TreeItem
-            key={item.getKey()}
-            item={item}
-            onAddSubFolder={addSubFolder}
-            onRemoveFolder={removeFolder}
-            onRemoveFile={removeFile}
-            onAddFile={addFile}
-          />
-        ))}
-
-        {/* 拖拽放置指示线 */}
+      <div ref={scrollRef} className="tree-scroll-area">
         <div
-          style={{
-            ...tree.getDragLineStyle(0, 0),
-            position: 'absolute',
-            height: 2,
-            background: '#1a73e8',
-            pointerEvents: 'none',
-          }}
-        />
+          {...tree.getContainerProps('文档收藏夹')}
+          className="tree-container"
+        >
+          {tree.getItems().map((item) => (
+            <TreeItem
+              key={item.getKey()}
+              item={item}
+              onAddSubFolder={addSubFolder}
+              onRemoveFolder={removeFolder}
+              onRemoveFile={removeFile}
+              onAddFile={addFile}
+            />
+          ))}
+
+          {/* 拖拽放置指示线 */}
+          <div
+            style={{
+              ...tree.getDragLineStyle(0, 0),
+              position: 'absolute',
+              height: 2,
+              background: '#1f6feb',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
+
+        <div ref={sentinelRef} className={`tree-status ${isLoadingMoreRootItems ? 'is-loading' : ''}`}>
+          {isLoadingMoreRootItems ? (
+            <span className="tree-status-spinner" aria-label="加载中" />
+          ) : hasMoreRootItems ? (
+            ''
+          ) : totalRootCount > 0 ? (
+            '没有更多'
+          ) : (
+            '暂无一级节点'
+          )}
+        </div>
       </div>
     </div>
   );
