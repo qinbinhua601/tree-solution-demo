@@ -1,7 +1,7 @@
 // src/hooks/useCollectionTree.ts
 // 树数据逻辑 hook：封装 asyncDataLoader、拖拽、CRUD 操作
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -27,6 +27,7 @@ import {
   createFile,
   type NodeData,
 } from '../api/collection';
+import { useIncrementalPagination } from './useIncrementalPagination';
 
 export const ROOT_ID = 'root';
 const ROOT_PAGE_SIZE = 10;
@@ -38,11 +39,11 @@ export function useCollectionTree() {
   const itemDataCacheRef = useRef<Record<string, NodeData>>({
     [ROOT_ID]: { id: ROOT_ID, type: 'folder', name: 'root' },
   });
-  const rootChildrenRef = useRef<NodeData[]>([]);
   const rootLoadedRef = useRef(false);
-  const loadingMoreRef = useRef(false);
-  const [visibleRootCount, setVisibleRootCount] = useState(ROOT_PAGE_SIZE);
-  const [isLoadingMoreRootItems, setIsLoadingMoreRootItems] = useState(false);
+  const rootPagination = useIncrementalPagination<NodeData>({
+    initialPageSize: ROOT_PAGE_SIZE,
+    loadMoreDelay: LOAD_MORE_DELAY,
+  });
 
   const writeItemCache = useCallback((data: NodeData) => {
     itemDataCacheRef.current[data.id] = data;
@@ -62,12 +63,12 @@ export function useCollectionTree() {
   const syncVisibleRootChildren = useCallback((tree: TreeInstance<NodeData>, nextCount: number) => {
     if (!rootLoadedRef.current) return;
     const root = tree.getItemInstance(ROOT_ID);
-    const visibleIds = rootChildrenRef.current
+    const visibleIds = rootPagination.itemsRef.current
       .slice(0, nextCount)
       .map((node) => node.id);
     root.updateCachedChildrenIds(visibleIds);
     tree.rebuildTree();
-  }, []);
+  }, [rootPagination.itemsRef]);
 
   // ── dataLoader ──────────────────────────────────────────────────────────────
   const dataLoader = {
@@ -84,10 +85,10 @@ export function useCollectionTree() {
       const nodes = await fetchChildren(folderId);
       nodes.forEach(writeItemCache);
       if (itemId === ROOT_ID) {
-        rootChildrenRef.current = nodes;
+        rootPagination.setItems(nodes, { resetVisibleCount: true });
         rootLoadedRef.current = true;
-        return nodes
-          .slice(0, visibleRootCount)
+        return rootPagination
+          .getVisibleItems(nodes)
           .map((n) => ({ id: n.id, data: n }));
       }
       return nodes.map((n) => ({ id: n.id, data: n }));
@@ -116,13 +117,13 @@ export function useCollectionTree() {
         if (sourceParentId === targetFolderId) return;
 
         if (sourceParentId === ROOT_ID) {
-          rootChildrenRef.current = rootChildrenRef.current.filter((node) => node.id !== item.getId());
+          rootPagination.removeItems((node) => node.id === item.getId());
         }
 
         if (targetFolderId === ROOT_ID) {
           const nextData = item.getItemData();
           writeItemCache(nextData);
-          rootChildrenRef.current = [...rootChildrenRef.current, nextData];
+          rootPagination.appendItem(nextData);
         }
       });
 
@@ -138,10 +139,10 @@ export function useCollectionTree() {
         },
       );
 
-      syncVisibleRootChildren(tree, visibleRootCount);
+      syncVisibleRootChildren(tree, rootPagination.visibleCountRef.current);
       tree.rebuildTree();
     },
-    [syncVisibleRootChildren, visibleRootCount, writeItemCache],
+    [rootPagination, syncVisibleRootChildren, writeItemCache],
   );
 
   // ── canDrop：只允许拖入文件夹 ────────────────────────────────────────────────
@@ -198,24 +199,15 @@ export function useCollectionTree() {
   treeRef.current = tree;
 
   useEffect(() => {
-    syncVisibleRootChildren(tree, visibleRootCount);
-  }, [syncVisibleRootChildren, tree, visibleRootCount]);
+    syncVisibleRootChildren(tree, rootPagination.visibleCount);
+  }, [rootPagination.visibleCount, syncVisibleRootChildren, tree]);
 
   const loadMoreRootItems = useCallback(async () => {
-    if (!rootLoadedRef.current || loadingMoreRef.current) return;
-    if (visibleRootCount >= rootChildrenRef.current.length) return;
+    if (!rootLoadedRef.current) return;
+    await rootPagination.loadMore();
+  }, [rootPagination]);
 
-    loadingMoreRef.current = true;
-    setIsLoadingMoreRootItems(true);
-
-    await new Promise((resolve) => window.setTimeout(resolve, LOAD_MORE_DELAY));
-    setVisibleRootCount((count) => Math.min(count + ROOT_PAGE_SIZE, rootChildrenRef.current.length));
-
-    loadingMoreRef.current = false;
-    setIsLoadingMoreRootItems(false);
-  }, [visibleRootCount]);
-
-  const hasMoreRootItems = rootLoadedRef.current && visibleRootCount < rootChildrenRef.current.length;
+  const hasMoreRootItems = rootLoadedRef.current && rootPagination.hasMore;
 
   // ── CRUD 操作 ────────────────────────────────────────────────────────────────
 
@@ -226,13 +218,12 @@ export function useCollectionTree() {
     const root = tree.getItemInstance(ROOT_ID);
     const oldIds = root.getChildren().map((c) => c.getId());
     writeItemCache(newData);
-    rootChildrenRef.current = [...rootChildrenRef.current, newData];
+    rootPagination.appendItem(newData, { reveal: true });
     root.updateCachedData(itemDataCacheRef.current[ROOT_ID]);
     tree.getItemInstance(newId).updateCachedData(newData);
     root.updateCachedChildrenIds([...oldIds, newId]);
-    setVisibleRootCount((count) => Math.min(Math.max(count + 1, ROOT_PAGE_SIZE), rootChildrenRef.current.length));
     tree.rebuildTree();
-  }, [tree, writeItemCache]);
+  }, [rootPagination, tree, writeItemCache]);
 
   /** 新建子文件夹到指定父文件夹 */
   const addSubFolder = useCallback(
@@ -257,10 +248,9 @@ export function useCollectionTree() {
       if (!parent) return;
       removeItemCacheTree(item);
       if (parent.getId() === ROOT_ID) {
-        rootChildrenRef.current = rootChildrenRef.current.filter((node) => node.id !== item.getId());
-        const nextCount = Math.min(visibleRootCount, rootChildrenRef.current.length);
+        const nextItems = rootPagination.removeItems((node) => node.id === item.getId());
+        const nextCount = Math.min(rootPagination.visibleCountRef.current, nextItems.length);
         syncVisibleRootChildren(tree, nextCount);
-        setVisibleRootCount(nextCount);
       }
       const newIds = parent.getChildren()
         .filter((c) => c.getId() !== item.getId())
@@ -268,7 +258,7 @@ export function useCollectionTree() {
       parent.updateCachedChildrenIds(newIds);
       tree.rebuildTree();
     },
-    [removeItemCacheTree, syncVisibleRootChildren, tree, visibleRootCount],
+    [removeItemCacheTree, rootPagination, syncVisibleRootChildren, tree],
   );
 
   /** 删除文件 */
@@ -279,10 +269,9 @@ export function useCollectionTree() {
       if (!parent) return;
       removeItemCache(item.getId());
       if (parent.getId() === ROOT_ID) {
-        rootChildrenRef.current = rootChildrenRef.current.filter((node) => node.id !== item.getId());
-        const nextCount = Math.min(visibleRootCount, rootChildrenRef.current.length);
+        const nextItems = rootPagination.removeItems((node) => node.id === item.getId());
+        const nextCount = Math.min(rootPagination.visibleCountRef.current, nextItems.length);
         syncVisibleRootChildren(tree, nextCount);
-        setVisibleRootCount(nextCount);
       }
       const newIds = parent.getChildren()
         .filter((c) => c.getId() !== item.getId())
@@ -290,7 +279,7 @@ export function useCollectionTree() {
       parent.updateCachedChildrenIds(newIds);
       tree.rebuildTree();
     },
-    [removeItemCache, syncVisibleRootChildren, tree, visibleRootCount],
+    [removeItemCache, rootPagination, syncVisibleRootChildren, tree],
   );
 
   /** 新建文档（调用方自行提供 fileId 和 name，接口由业务层处理） */
@@ -311,10 +300,10 @@ export function useCollectionTree() {
   return {
     tree,
     hasMoreRootItems,
-    isLoadingMoreRootItems,
+    isLoadingMoreRootItems: rootPagination.isLoadingMore,
     loadMoreRootItems,
-    visibleRootCount,
-    totalRootCount: rootChildrenRef.current.length,
+    visibleRootCount: rootPagination.visibleCount,
+    totalRootCount: rootPagination.totalCount,
     addRootFolder,
     addSubFolder,
     removeFolder,

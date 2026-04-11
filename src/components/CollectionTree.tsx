@@ -1,8 +1,9 @@
 // src/components/CollectionTree.tsx
 // 树容器：渲染整棵树，提供"新建根目录文件夹"入口
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useCollectionTree } from '../hooks/useCollectionTree';
+import { useInfiniteScrollTrigger } from '../hooks/useInfiniteScrollTrigger';
 import { TreeItem } from './TreeItem';
 
 export function CollectionTree() {
@@ -11,7 +12,6 @@ export function CollectionTree() {
     hasMoreRootItems,
     isLoadingMoreRootItems,
     loadMoreRootItems,
-    visibleRootCount,
     totalRootCount,
     addRootFolder,
     addSubFolder,
@@ -32,26 +32,12 @@ export function CollectionTree() {
     setNewFolderName('');
   };
 
-  useEffect(() => {
-    const root = scrollRef.current;
-    const target = sentinelRef.current;
-    if (!root || !target || !hasMoreRootItems) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMoreRootItems();
-        }
-      },
-      {
-        root,
-        rootMargin: '0px 0px 120px 0px',
-      },
-    );
-
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [hasMoreRootItems, loadMoreRootItems, visibleRootCount]);
+  useInfiniteScrollTrigger({
+    rootRef: scrollRef,
+    targetRef: sentinelRef,
+    enabled: hasMoreRootItems,
+    onIntersect: loadMoreRootItems,
+  });
 
   return (
     <div className="tree-shell">
