@@ -1,0 +1,114 @@
+@startuml
+autonumber
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam ResponseMessageBelowArrow true
+
+actor User
+participant "App" as App
+participant "CollectionTree" as CT
+participant "useCollectionTree" as Hook
+participant "headless-tree\nuseTree / TreeInstance" as Tree
+participant "dataLoader" as Loader
+participant "collection API\nfetchChildren/create/move/rename/delete" as API
+participant "mock fetch handler\nwindow.fetch override" as MockFetch
+database "mock store\nMap<string, StoreNode>" as Store
+participant "TreeItem" as Item
+participant "IntersectionObserver\nuseInfiniteScrollTrigger" as IO
+
+== 初始化 ==
+User -> App : 打开页面
+App -> CT : render()
+CT -> Hook : useCollectionTree()
+Hook -> Tree : useTree({ dataLoader, features, callbacks })
+Tree --> Hook : tree instance
+Hook --> CT : tree + CRUD methods
+CT -> Tree : getRootItem()
+Tree -> Loader : getChildrenWithData("root")
+
+== 根节点首次加载 ==
+Loader -> API : fetchChildren(undefined)
+API -> MockFetch : GET /collection/list
+MockFetch -> Store : 按 parentId = null 查询
+Store --> MockFetch : StoreNode[]
+MockFetch --> API : ApiEnvelope<NodeData[]>
+API --> Loader : NodeData[]
+Loader -> Hook : 写入 itemDataCacheRef
+Loader --> Tree : [{ id, data }]
+Tree --> CT : root children ready
+CT -> CT : rootItems.slice(0, visibleRootCount)
+
+== 渲染 ==
+CT -> Item : 递归渲染 visibleRootItems
+Item -> Tree : item.getItemData()\nitem.isExpanded()\nitem.getChildren()
+
+== 展开子文件夹 ==
+User -> Item : 点击展开 folder
+Item -> Tree : toggle expand
+Tree -> Loader : getChildrenWithData(folderId)
+Loader -> API : fetchChildren(folderId)
+API -> MockFetch : GET /collection/list?folderId=...
+MockFetch -> Store : 按 parentId = folderId 查询
+Store --> MockFetch : children
+MockFetch --> API : ApiEnvelope<NodeData[]>
+API --> Loader : NodeData[]
+Loader -> Hook : 更新 itemDataCacheRef
+Loader --> Tree : children data
+Tree --> Item : 子节点可渲染
+
+== 根节点滚动分页 ==
+User -> CT : 向下滚动
+CT -> IO : sentinel 进入可视区
+IO -> CT : onIntersect()
+CT -> Hook : loadMoreRootItems()
+Hook -> Hook : visibleRootCount += 10
+Hook --> CT : state update
+CT -> CT : 重新 slice 根节点
+CT -> Item : 渲染更多一级节点
+
+== 新建 / 删除 / 重命名 / 拖拽 ==
+User -> Item : 触发操作
+Item -> Hook : add/remove/rename/onDrop
+
+alt 新建
+  Hook -> API : POST /collection/folder or /file
+  API -> MockFetch : fetch(...)
+  MockFetch -> Store : insert node
+  Store --> MockFetch : new id
+  MockFetch --> API : ApiEnvelope<[id]>
+  API --> Hook : id
+  Hook -> Tree : updateCachedData()\nupdateCachedChildrenIds()
+  Hook -> Tree : rebuildTree()
+end
+
+alt 删除
+  Hook -> API : DELETE /collection/folder/{id}\nor /file/{id}
+  API -> MockFetch : fetch(...)
+  MockFetch -> Store : delete node / subtree
+  MockFetch --> API : ApiEnvelope<void>
+  API --> Hook : success
+  Hook -> Tree : parent.updateCachedChildrenIds()
+  Hook -> Tree : rebuildTree()
+end
+
+alt 重命名
+  Hook -> API : PUT /collection/folder/rename
+  API -> MockFetch : fetch(...)
+  MockFetch -> Store : update name
+  MockFetch --> API : ApiEnvelope<void>
+  API --> Hook : success
+  Hook -> Tree : item.updateCachedData()
+end
+
+alt 拖拽移动
+  Hook -> API : PUT /collection/move
+  API -> MockFetch : fetch(...)
+  MockFetch -> Store : update parentId
+  MockFetch --> API : ApiEnvelope<void>
+  API --> Hook : success
+  Hook -> Tree : removeItemsFromParents()
+  Hook -> Tree : insertItemsAtTarget()
+  Hook -> Tree : rebuildTree()
+end
+
+@enduml

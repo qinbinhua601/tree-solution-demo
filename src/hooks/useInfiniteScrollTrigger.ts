@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from 'react';
 
 interface UseInfiniteScrollTriggerOptions {
-  rootRef: RefObject<Element | null>;
+  rootRef?: RefObject<Element | null>;
   targetRef: RefObject<Element | null>;
   enabled: boolean;
   onIntersect: () => void;
@@ -16,10 +16,10 @@ export function useInfiniteScrollTrigger({
   rootMargin = '0px 0px 120px 0px',
 }: UseInfiniteScrollTriggerOptions) {
   useEffect(() => {
-    const root = rootRef.current;
+    const root = rootRef?.current ?? null;
     const target = targetRef.current;
 
-    if (!enabled || !root || !target) return;
+    if (!enabled || !target) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
