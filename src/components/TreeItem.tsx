@@ -32,6 +32,7 @@ export function TreeItem({
   const level = item.getItemMeta().level;
   const isLoading = item.isLoading?.();
   const isRenaming = item.isRenaming?.();
+  const showsExpandToggle = isFolder && (isLoading || !!data?.hasChildren);
 
   const [menu, setMenu] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -55,6 +56,13 @@ export function TreeItem({
     setMenu(true);
   };
 
+  const handleMenuButtonClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isPendingCreation) return;
+    setMenu((current) => !current);
+  };
+
   const closeMenu = () => setMenu(false);
 
   const handleDelete = async () => {
@@ -74,7 +82,7 @@ export function TreeItem({
   };
 
   return (
-    <div ref={rootRef} style={{ position: 'relative' }}>
+    <div ref={rootRef} style={{ position: 'relative' }} data-node-id={item.getId()}>
       {/* 节点行 */}
       <div
         {...item.getProps()}
@@ -95,8 +103,13 @@ export function TreeItem({
         onDoubleClick={() => !isPendingCreation && item.startRenaming?.()}
       >
         {isFolder && (
-          <span style={{ width: 14, fontSize: 11, color: '#7a8699' }}>
-            {isLoading ? '…' : item.isExpanded() ? '▾' : '▸'}
+          <span
+            className={`tree-item-toggle ${isLoading ? 'is-loading' : ''} ${showsExpandToggle ? '' : 'is-hidden'}`}
+            aria-hidden="true"
+          >
+            {showsExpandToggle
+              ? isLoading ? <span className="tree-item-spinner" /> : item.isExpanded() ? '▾' : '▸'
+              : null}
           </span>
         )}
 
@@ -135,6 +148,19 @@ export function TreeItem({
                 {data?.documentCount ?? 0} 篇
               </span>
             )}
+            {!isPendingCreation && (
+              <button
+                type="button"
+                className="tree-item-menu-button"
+                aria-label={`打开${data?.name ?? '节点'}的操作菜单`}
+                aria-haspopup="menu"
+                aria-expanded={menu}
+                onClick={handleMenuButtonClick}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                ⋯
+              </button>
+            )}
           </>
         )}
       </div>
@@ -144,7 +170,7 @@ export function TreeItem({
         <div
           style={{
             position: 'absolute',
-            left: level * 18 + 12,
+            right: 12,
             top: 44,
             background: '#fff',
             border: '1px solid #d6dfeb',

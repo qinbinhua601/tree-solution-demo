@@ -1,7 +1,7 @@
 // src/components/CollectionTree.tsx
 // 树容器：渲染整棵树，提供"新建根目录文件夹"入口
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ItemInstance } from '@headless-tree/core';
 import type { NodeData } from '../api/collection';
 import { useCollectionTree } from '../hooks/useCollectionTree';
@@ -28,6 +28,7 @@ export function CollectionTree() {
 
   const [newNodeName, setNewNodeName] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [pendingScrollNodeId, setPendingScrollNodeId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const rootItem = tree.getRootItem();
@@ -44,13 +45,39 @@ export function CollectionTree() {
     error instanceof Error ? error.message : '操作失败，请稍后重试'
   );
 
+  useEffect(() => {
+    if (!pendingScrollNodeId) {
+      return;
+    }
+
+    const scrollArea = scrollRef.current;
+    const target = scrollArea?.querySelector<HTMLElement>(`[data-node-id="${pendingScrollNodeId}"]`);
+
+    if (!scrollArea || !target) {
+      return;
+    }
+
+    const containerRect = scrollArea.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const isOutOfView = targetRect.top < containerRect.top || targetRect.bottom > containerRect.bottom;
+
+    if (isOutOfView) {
+      target.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      });
+    }
+
+    setPendingScrollNodeId(null);
+  }, [pendingScrollNodeId, visibleRootCount, tree]);
+
   const handleAddRootFolder = async () => {
     const name = newNodeName.trim();
     if (!name) return;
 
     try {
-      await addRootFolder(name);
-      setNewNodeName('');
+      const createdNode = await addRootFolder(name);
+      setPendingScrollNodeId(createdNode.id);
       setFeedback({ type: 'success', message: `已在根目录创建文件夹“${name}”` });
     } catch (error) {
       setFeedback({ type: 'error', message: getErrorMessage(error) });
@@ -62,8 +89,8 @@ export function CollectionTree() {
     if (!name) return;
 
     try {
-      await addRootFile(name);
-      setNewNodeName('');
+      const createdNode = await addRootFile(name);
+      setPendingScrollNodeId(createdNode.id);
       setFeedback({ type: 'success', message: `已在根目录创建文档“${name}”` });
     } catch (error) {
       setFeedback({ type: 'error', message: getErrorMessage(error) });
@@ -79,7 +106,8 @@ export function CollectionTree() {
 
   const handleAddSubFolder = async (parentId: string, name: string) => {
     try {
-      await addSubFolder(parentId, name);
+      const createdNode = await addSubFolder(parentId, name);
+      setPendingScrollNodeId(createdNode.id);
       setFeedback({ type: 'success', message: `已创建子文件夹“${name}”` });
     } catch (error) {
       setFeedback({ type: 'error', message: getErrorMessage(error) });
@@ -88,7 +116,8 @@ export function CollectionTree() {
 
   const handleAddFile = async (parentId: string, name: string) => {
     try {
-      await addFile(parentId, name);
+      const createdNode = await addFile(parentId, name);
+      setPendingScrollNodeId(createdNode.id);
       setFeedback({ type: 'success', message: `已创建文档“${name}”` });
     } catch (error) {
       setFeedback({ type: 'error', message: getErrorMessage(error) });
@@ -123,8 +152,9 @@ export function CollectionTree() {
 
   const handleSubmitInlineCreate = async (tempId: string, name: string) => {
     try {
-      await submitPendingCreation(tempId, name);
-      if (name.trim()) {
+      const createdNode = await submitPendingCreation(tempId, name);
+      if (createdNode && name.trim()) {
+        setPendingScrollNodeId(createdNode.id);
         setFeedback({ type: 'success', message: `已创建“${name.trim()}”` });
       }
     } catch (error) {

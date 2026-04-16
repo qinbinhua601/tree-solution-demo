@@ -7,6 +7,7 @@ export interface NodeData {
   name: string;
   parentId: string | null;
   documentCount: number;
+  hasChildren?: boolean;
   isPendingCreation?: boolean;
 }
 

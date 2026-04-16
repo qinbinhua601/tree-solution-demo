@@ -25,7 +25,7 @@ export class CollectionStore {
     return this.state.nodes
       .filter((node) => node.parentId === parentId)
       .sort(compareNodes)
-      .map((node) => toNodeData(node, getDocumentCount));
+      .map((node) => toNodeData(node, getDocumentCount, this.state.nodes));
   }
 
   createFolder({ name, parentId }) {
@@ -43,7 +43,7 @@ export class CollectionStore {
 
     this.state.nodes.push(node);
     this.persist();
-    return toNodeData(node, () => 0);
+    return toNodeData(node, () => 0, this.state.nodes);
   }
 
   createFile({ name, parentId }) {
@@ -61,21 +61,21 @@ export class CollectionStore {
 
     this.state.nodes.push(node);
     this.persist();
-    return toNodeData(node, () => 0);
+    return toNodeData(node, () => 0, this.state.nodes);
   }
 
   renameFolder({ folderId, name }) {
     const folder = this.getNodeOrThrow(folderId, 'folder', '文件夹不存在');
     folder.name = assertName(name, '文件夹名称不能为空');
     this.persist();
-    return toNodeData(folder, createDocumentCountGetter(this.state.nodes));
+    return toNodeData(folder, createDocumentCountGetter(this.state.nodes), this.state.nodes);
   }
 
   renameFile({ fileId, name }) {
     const file = this.getNodeOrThrow(fileId, 'file', '文档不存在');
     file.name = assertName(name, '文档名称不能为空');
     this.persist();
-    return toNodeData(file, createDocumentCountGetter(this.state.nodes));
+    return toNodeData(file, createDocumentCountGetter(this.state.nodes), this.state.nodes);
   }
 
   moveNode({ id, targetFolderId }) {
@@ -208,14 +208,19 @@ function compareNodes(left, right) {
   return left.name.localeCompare(right.name, 'zh-CN');
 }
 
-function toNodeData(node, getDocumentCount) {
+function toNodeData(node, getDocumentCount, nodes) {
   return {
     id: node.id,
     type: node.type,
     name: node.name,
     parentId: node.parentId,
     documentCount: node.type === 'file' ? 1 : getDocumentCount(node.id),
+    hasChildren: node.type === 'folder' ? hasChildNodes(node.id, nodes) : false,
   };
+}
+
+function hasChildNodes(parentId, nodes) {
+  return nodes?.some((node) => node.parentId === parentId) ?? false;
 }
 
 function createDocumentCountGetter(nodes) {

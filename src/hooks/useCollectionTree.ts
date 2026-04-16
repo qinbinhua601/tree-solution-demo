@@ -29,7 +29,7 @@ import {
 
 export const ROOT_ID = 'root';
 const ROOT_PAGE_SIZE = 10;
-const LOAD_MORE_DELAY = 300;
+const LOAD_MORE_DELAY = 800;
 
 interface PendingCreationState {
   id: string;
@@ -83,6 +83,22 @@ export function useCollectionTree() {
   const sortChildIds = useCallback((ids: string[]) => {
     return [...ids].sort(compareNodeIds);
   }, [compareNodeIds]);
+
+  const ensureRootItemVisible = useCallback((itemId: string) => {
+    const root = treeRef.current?.getItemInstance(ROOT_ID);
+    if (!root) {
+      return;
+    }
+
+    const childIds = root.getChildren().map((child) => child.getId());
+    const targetIndex = childIds.indexOf(itemId);
+
+    if (targetIndex === -1) {
+      return;
+    }
+
+    setVisibleRootCount((count) => Math.max(count, targetIndex + 1));
+  }, []);
 
   const removeItemCache = useCallback((itemId: string) => {
     delete itemDataCacheRef.current[itemId];
@@ -228,36 +244,42 @@ export function useCollectionTree() {
   const submitPendingCreation = useCallback(async (tempId: string, rawName: string) => {
     const pending = pendingCreationRef.current;
     if (!pending || pending.id !== tempId || pending.saving) {
-      return;
+      return null;
     }
 
     const name = rawName.trim();
     if (!name) {
       cancelPendingCreation(tempId);
-      return;
+      return null;
     }
 
     setPendingCreationState({ ...pending, saving: true });
 
     try {
+      let createdNode: NodeData;
+
       if (pending.type === 'folder') {
-        await createFolder(name, pending.parentId === ROOT_ID ? undefined : pending.parentId);
+        createdNode = await createFolder(name, pending.parentId === ROOT_ID ? undefined : pending.parentId);
       } else {
-        await createFile(name, pending.parentId === ROOT_ID ? undefined : pending.parentId);
+        createdNode = await createFile(name, pending.parentId === ROOT_ID ? undefined : pending.parentId);
       }
 
       await refreshFoldersFromServer(
         [pending.parentId],
         pending.parentId === ROOT_ID ? { rootVisibleDelta: 1 } : undefined,
       );
+      if (pending.parentId === ROOT_ID) {
+        ensureRootItemVisible(createdNode.id);
+      }
       removeItemCache(tempId);
       setPendingCreationState(null);
+      return createdNode;
     } catch (error) {
       setPendingCreationState(null);
       removePendingCreationNode(pending);
       throw error;
     }
-  }, [refreshFoldersFromServer, removeItemCache, removePendingCreationNode, setPendingCreationState]);
+  }, [cancelPendingCreation, ensureRootItemVisible, refreshFoldersFromServer, removeItemCache, removePendingCreationNode, setPendingCreationState]);
 
   // ── dataLoader ──────────────────────────────────────────────────────────────
   const dataLoader = {
@@ -456,21 +478,26 @@ export function useCollectionTree() {
 
   /** 新建根目录文件夹 */
   const addRootFolder = useCallback(async (name: string) => {
-    await createFolder(name);
+    const createdNode = await createFolder(name);
     await refreshFoldersFromServer([ROOT_ID], { rootVisibleDelta: 1 });
-  }, [refreshFoldersFromServer]);
+    ensureRootItemVisible(createdNode.id);
+    return createdNode;
+  }, [ensureRootItemVisible, refreshFoldersFromServer]);
 
   /** 新建根目录文档 */
   const addRootFile = useCallback(async (name: string) => {
-    await createFile(name);
+    const createdNode = await createFile(name);
     await refreshFoldersFromServer([ROOT_ID], { rootVisibleDelta: 1 });
-  }, [refreshFoldersFromServer]);
+    ensureRootItemVisible(createdNode.id);
+    return createdNode;
+  }, [ensureRootItemVisible, refreshFoldersFromServer]);
 
   /** 新建子文件夹到指定父文件夹 */
   const addSubFolder = useCallback(
     async (parentId: string, name: string) => {
-      await createFolder(name, parentId);
+      const createdNode = await createFolder(name, parentId);
       await refreshFoldersFromServer([parentId]);
+      return createdNode;
     },
     [refreshFoldersFromServer],
   );
@@ -500,8 +527,9 @@ export function useCollectionTree() {
   /** 新建文档 */
   const addFile = useCallback(
     async (parentId: string, name: string) => {
-      await createFile(name, parentId);
+      const createdNode = await createFile(name, parentId);
       await refreshFoldersFromServer([parentId]);
+      return createdNode;
     },
     [refreshFoldersFromServer],
   );

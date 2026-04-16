@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { CollectionStore, ApiError } from './collection-store.mjs';
 
 const PORT = Number(process.env.PORT ?? 3001);
+const LIST_CHILDREN_DELAY_MS = 300;
 const store = new CollectionStore({
   dbPath: resolve(process.cwd(), 'server/data/runtime/collection-db.json'),
 });
@@ -53,6 +54,7 @@ async function routeRequest(request, url) {
   }
 
   if (pathname === '/collection/list' && request.method === 'GET') {
+    await delay(LIST_CHILDREN_DELAY_MS);
     return {
       statusCode: 200,
       data: store.listChildren(searchParams.get('folderId')),
@@ -149,4 +151,8 @@ function sendJson(response, statusCode, body) {
     'Content-Type': 'application/json; charset=utf-8',
   });
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
