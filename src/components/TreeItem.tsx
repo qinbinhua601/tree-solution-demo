@@ -11,6 +11,9 @@ interface Props {
   onRemoveFolder: (item: ItemInstance<NodeData>) => Promise<void>;
   onRemoveFile: (item: ItemInstance<NodeData>) => Promise<void>;
   onAddFile: (parentId: string, name: string) => Promise<void>;
+  onStartInlineCreate: (parentId: string, type: 'folder' | 'file') => Promise<void>;
+  onSubmitInlineCreate: (tempId: string, name: string) => Promise<void>;
+  onCancelInlineCreate: (tempId?: string) => void;
 }
 
 export function TreeItem({
@@ -19,9 +22,13 @@ export function TreeItem({
   onRemoveFolder,
   onRemoveFile,
   onAddFile,
+  onStartInlineCreate,
+  onSubmitInlineCreate,
+  onCancelInlineCreate,
 }: Props) {
   const data = item.getItemData();
   const isFolder = item.isFolder();
+  const isPendingCreation = !!data?.isPendingCreation;
   const level = item.getItemMeta().level;
   const isLoading = item.isLoading?.();
   const isRenaming = item.isRenaming?.();
@@ -43,6 +50,7 @@ export function TreeItem({
   }, [menu]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (isPendingCreation) return;
     e.preventDefault();
     setMenu(true);
   };
@@ -57,15 +65,12 @@ export function TreeItem({
 
   const handleAddSub = async () => {
     closeMenu();
-    const name = window.prompt('新建子文件夹名称');
-    if (name) await onAddSubFolder(item.getId(), name);
+    await onStartInlineCreate(item.getId(), 'folder');
   };
 
   const handleAddFile = () => {
     closeMenu();
-    const name = window.prompt('新建文档名称');
-    if (!name) return;
-    void onAddFile(item.getId(), name);
+    void onStartInlineCreate(item.getId(), 'file');
   };
 
   return (
@@ -87,29 +92,50 @@ export function TreeItem({
           transition: 'background 120ms ease',
         }}
         onContextMenu={handleContextMenu}
-        onDoubleClick={() => isFolder && item.startRenaming?.()}
+        onDoubleClick={() => !isPendingCreation && item.startRenaming?.()}
       >
-        {/* 展开箭头 */}
         {isFolder && (
           <span style={{ width: 14, fontSize: 11, color: '#7a8699' }}>
             {isLoading ? '…' : item.isExpanded() ? '▾' : '▸'}
           </span>
         )}
 
-        {/* 图标 */}
         <span style={{ fontSize: 16 }}>{isFolder ? '📁' : '📄'}</span>
 
-        {/* 名称 / 重命名输入框 */}
         {isRenaming ? (
           <input
             {...item.getRenameInputProps?.()}
             autoFocus
             style={{ flex: 1, fontSize: 14, border: '1px solid #c7d2e1', borderRadius: 8, padding: '6px 8px', color: '#111827', background: '#fff' }}
           />
+        ) : isPendingCreation ? (
+          <InlineCreateInput
+            itemId={item.getId()}
+            type={data?.type ?? 'file'}
+            onSubmit={onSubmitInlineCreate}
+            onCancel={onCancelInlineCreate}
+          />
         ) : (
-          <span style={{ flex: 1, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#152033' }}>
-            {data?.name}
-          </span>
+          <>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#152033' }}>
+              {data?.name}
+            </span>
+            {isFolder && !isPendingCreation && (
+              <span
+                style={{
+                  flexShrink: 0,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: '#eef4fb',
+                  color: '#54708e',
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                {data?.documentCount ?? 0} 篇
+              </span>
+            )}
+          </>
         )}
       </div>
 
@@ -133,13 +159,75 @@ export function TreeItem({
             <>
               <MenuItem label="新建子文件夹" onClick={() => void handleAddSub()} />
               <MenuItem label="新建文档" onClick={handleAddFile} />
-              <MenuItem label="重命名" onClick={() => { closeMenu(); item.startRenaming?.(); }} />
             </>
           )}
+          <MenuItem label="重命名" onClick={() => { closeMenu(); item.startRenaming?.(); }} />
           <MenuItem label="删除" onClick={() => void handleDelete()} danger />
         </div>
       )}
     </div>
+  );
+}
+
+function InlineCreateInput({
+  itemId,
+  type,
+  onSubmit,
+  onCancel,
+}: {
+  itemId: string;
+  type: 'folder' | 'file';
+  onSubmit: (tempId: string, name: string) => Promise<void>;
+  onCancel: (tempId?: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  const hasHandledRef = useRef(false);
+
+  const finish = (mode: 'submit' | 'cancel') => {
+    if (hasHandledRef.current) {
+      return;
+    }
+
+    hasHandledRef.current = true;
+
+    if (mode === 'submit' && value.trim()) {
+      void onSubmit(itemId, value);
+      return;
+    }
+
+    onCancel(itemId);
+  };
+
+  return (
+    <input
+      autoFocus
+      placeholder={type === 'folder' ? '输入子文件夹名称' : '输入文档名称'}
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => finish('submit')}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          finish('submit');
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish('cancel');
+        }
+      }}
+      style={{
+        flex: 1,
+        fontSize: 14,
+        border: '1px solid #c7d2e1',
+        borderRadius: 8,
+        padding: '6px 8px',
+        color: '#111827',
+        background: '#fff',
+      }}
+    />
   );
 }
 

@@ -80,6 +80,54 @@ input {
   color: #142033;
 }
 
+.tree-tips {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f3f7fc;
+  color: #5f6f86;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tree-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #142033;
+  color: #f8fbff;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.tree-summary strong {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.tree-feedback {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tree-feedback-success {
+  background: #ebf8ef;
+  color: #17653a;
+  border: 1px solid #cdebd7;
+}
+
+.tree-feedback-error {
+  background: #fff3f2;
+  color: #b42318;
+  border: 1px solid #ffd2cf;
+}
+
 .tree-toolbar {
   display: flex;
   gap: 10px;
@@ -112,6 +160,11 @@ input {
   color: #fff;
   cursor: pointer;
   font-weight: 600;
+}
+
+.tree-add-button-secondary {
+  background: #e9f0fb;
+  color: #184a90;
 }
 
 .tree-scroll-area {
@@ -168,6 +221,14 @@ input {
 
   .demo-panel {
     padding: 14px;
+  }
+
+  .tree-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .tree-input {
+    width: 100%;
   }
 
   .tree-scroll-area {

@@ -8,7 +8,7 @@ export function App() {
           <p className="eyebrow">Collection Tree Demo</p>
           <h1>文档收藏夹树</h1>
           <p className="hero-text">
-            根目录一级节点按 10 条分页展示，滚动到底部自动继续加载；子目录仍保持原有展开与懒加载行为。
+            当前 demo 已接入真实 Node 后端，支持文件夹 / 文档的新建、重命名、删除、拖拽移动与根目录分页展示。
           </p>
         </div>
         <div className="demo-panel">

@@ -15,27 +15,59 @@ export function CollectionTree() {
     loadMoreRootItems,
     visibleRootCount,
     addRootFolder,
+    addRootFile,
     addSubFolder,
     removeFolder,
     removeFile,
     addFile,
+    startPendingCreation,
+    submitPendingCreation,
+    cancelPendingCreation,
   } =
     useCollectionTree();
 
-  const [newFolderName, setNewFolderName] = useState('');
+  const [newNodeName, setNewNodeName] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const rootItem = tree.getRootItem();
   const rootItems = rootItem.getChildren();
   const visibleRootItems = rootItems.slice(0, visibleRootCount);
   const totalRootCount = rootItems.length;
+  const totalDocumentCount = rootItems.reduce(
+    (total, item) => total + (item.getItemData()?.documentCount ?? 0),
+    0,
+  );
   const hasMoreRootItems = totalRootCount > visibleRootCount;
 
-  const handleAddRoot = async () => {
-    const name = newFolderName.trim();
+  const getErrorMessage = (error: unknown) => (
+    error instanceof Error ? error.message : '操作失败，请稍后重试'
+  );
+
+  const handleAddRootFolder = async () => {
+    const name = newNodeName.trim();
     if (!name) return;
-    await addRootFolder(name);
-    setNewFolderName('');
+
+    try {
+      await addRootFolder(name);
+      setNewNodeName('');
+      setFeedback({ type: 'success', message: `已在根目录创建文件夹“${name}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleAddRootFile = async () => {
+    const name = newNodeName.trim();
+    if (!name) return;
+
+    try {
+      await addRootFile(name);
+      setNewNodeName('');
+      setFeedback({ type: 'success', message: `已在根目录创建文档“${name}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
   };
 
   useInfiniteScrollTrigger({
@@ -45,52 +77,118 @@ export function CollectionTree() {
     onIntersect: loadMoreRootItems,
   });
 
+  const handleAddSubFolder = async (parentId: string, name: string) => {
+    try {
+      await addSubFolder(parentId, name);
+      setFeedback({ type: 'success', message: `已创建子文件夹“${name}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleAddFile = async (parentId: string, name: string) => {
+    try {
+      await addFile(parentId, name);
+      setFeedback({ type: 'success', message: `已创建文档“${name}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleRemoveFolder = async (item: ItemInstance<NodeData>) => {
+    try {
+      await removeFolder(item);
+      setFeedback({ type: 'success', message: `已删除文件夹“${item.getItemData()?.name ?? ''}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleRemoveFile = async (item: ItemInstance<NodeData>) => {
+    try {
+      await removeFile(item);
+      setFeedback({ type: 'success', message: `已删除文档“${item.getItemData()?.name ?? ''}”` });
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleStartInlineCreate = async (parentId: string, type: 'folder' | 'file') => {
+    try {
+      await startPendingCreation(parentId, type);
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
+  const handleSubmitInlineCreate = async (tempId: string, name: string) => {
+    try {
+      await submitPendingCreation(tempId, name);
+      if (name.trim()) {
+        setFeedback({ type: 'success', message: `已创建“${name.trim()}”` });
+      }
+    } catch (error) {
+      setFeedback({ type: 'error', message: getErrorMessage(error) });
+    }
+  };
+
   return (
     <div className="tree-shell">
-      {/* 工具栏：新建根目录文件夹 */}
+      <div className="tree-tips">
+        右键文件夹可新建子文件夹 / 文档，右键任意节点可重命名或删除，拖拽节点可移动到目标文件夹。
+      </div>
+
+      <div className="tree-summary">
+        总文档数
+        <strong>{totalDocumentCount}</strong>
+      </div>
+
+      {feedback && (
+        <div className={`tree-feedback tree-feedback-${feedback.type}`}>
+          {feedback.message}
+        </div>
+      )}
+
       <div className="tree-toolbar">
         <input
           className="tree-input"
-          value={newFolderName}
-          onChange={(e) => setNewFolderName(e.target.value)}
-          placeholder="新建根目录文件夹…"
-          onKeyDown={(e) => e.key === 'Enter' && handleAddRoot()}
+          value={newNodeName}
+          onChange={(e) => setNewNodeName(e.target.value)}
+          placeholder="输入根目录节点名称…"
+          onKeyDown={(e) => e.key === 'Enter' && handleAddRootFolder()}
         />
         <button
           className="tree-add-button"
-          onClick={handleAddRoot}
+          onClick={handleAddRootFolder}
         >
-          新建
+          新建文件夹
+        </button>
+        <button
+          className="tree-add-button tree-add-button-secondary"
+          onClick={handleAddRootFile}
+        >
+          新建文档
         </button>
       </div>
 
-      {/* 树容器 */}
       <div ref={scrollRef} className="tree-scroll-area">
         <div
           {...tree.getContainerProps('文档收藏夹')}
           className="tree-container"
         >
-          {visibleRootItems.map((item) => (
+          {visibleRootItems.map((item: ItemInstance<NodeData>) => (
             <NestedTreeItem
               key={item.getKey()}
               item={item}
-              onAddSubFolder={addSubFolder}
-              onRemoveFolder={removeFolder}
-              onRemoveFile={removeFile}
-              onAddFile={addFile}
+              onAddSubFolder={handleAddSubFolder}
+              onRemoveFolder={handleRemoveFolder}
+              onRemoveFile={handleRemoveFile}
+              onAddFile={handleAddFile}
+              onStartInlineCreate={handleStartInlineCreate}
+              onSubmitInlineCreate={handleSubmitInlineCreate}
+              onCancelInlineCreate={cancelPendingCreation}
             />
           ))}
-
-          {/* 拖拽放置指示线 */}
-          <div
-            style={{
-              ...tree.getDragLineStyle(0, 0),
-              position: 'absolute',
-              height: 2,
-              background: '#1f6feb',
-              pointerEvents: 'none',
-            }}
-          />
         </div>
 
         <div ref={sentinelRef} className={`tree-status ${isLoadingMoreRootItems ? 'is-loading' : ''}`}>
@@ -115,6 +213,9 @@ interface NestedTreeItemProps {
   onRemoveFolder: (item: ItemInstance<NodeData>) => Promise<void>;
   onRemoveFile: (item: ItemInstance<NodeData>) => Promise<void>;
   onAddFile: (parentId: string, name: string) => Promise<void>;
+  onStartInlineCreate: (parentId: string, type: 'folder' | 'file') => Promise<void>;
+  onSubmitInlineCreate: (tempId: string, name: string) => Promise<void>;
+  onCancelInlineCreate: (tempId?: string) => void;
 }
 
 function NestedTreeItem({
@@ -123,6 +224,9 @@ function NestedTreeItem({
   onRemoveFolder,
   onRemoveFile,
   onAddFile,
+  onStartInlineCreate,
+  onSubmitInlineCreate,
+  onCancelInlineCreate,
 }: NestedTreeItemProps) {
   return (
     <>
@@ -132,6 +236,9 @@ function NestedTreeItem({
         onRemoveFolder={onRemoveFolder}
         onRemoveFile={onRemoveFile}
         onAddFile={onAddFile}
+        onStartInlineCreate={onStartInlineCreate}
+        onSubmitInlineCreate={onSubmitInlineCreate}
+        onCancelInlineCreate={onCancelInlineCreate}
       />
 
       {item.isFolder() && item.isExpanded() && item.getChildren().map((child) => (
@@ -142,6 +249,9 @@ function NestedTreeItem({
           onRemoveFolder={onRemoveFolder}
           onRemoveFile={onRemoveFile}
           onAddFile={onAddFile}
+          onStartInlineCreate={onStartInlineCreate}
+          onSubmitInlineCreate={onSubmitInlineCreate}
+          onCancelInlineCreate={onCancelInlineCreate}
         />
       ))}
     </>

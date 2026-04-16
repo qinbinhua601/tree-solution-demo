@@ -4,6 +4,13 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/collection': {
+        target: 'http://localhost:3001',
+      },
+    },
+  },
   build: {
     rollupOptions: {
       input: {

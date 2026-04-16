@@ -8,6 +8,12 @@
 tree-solution-demo/
 ├── README.md                               ← 当前方案说明
 ├── HEADLESS_TREE_PAGINATION_ANALYSIS.md    ← 分页分析与复用建议
+├── server/
+│   ├── collection-store.mjs                ← 真实后端数据层与业务校验
+│   ├── index.mjs                           ← Node HTTP 服务
+│   └── seed-data.mjs                       ← 初始化种子数据
+├── scripts/
+│   └── dev.mjs                             ← 同时启动前后端的开发脚本
 ├── src/
 │   ├── api/
 │   │   └── collection.ts                   ← 接口封装
@@ -22,6 +28,16 @@ tree-solution-demo/
 ├── package.json
 └── vite.config.ts
 ```
+
+## 运行方式
+
+```bash
+npm run dev
+```
+
+- `http://localhost:3001` 启动真实后端接口
+- `http://localhost:5173` 启动前端 demo，`/collection` 请求会自动代理到后端
+- 后端数据默认持久化到 `server/data/runtime/collection-db.json`
 
 ---
 
@@ -62,7 +78,7 @@ interface NodeData {
 ```
 dataLoader.getChildrenWithData(folderId)
   → 调用 GET /collection/list?folderId=xxx
-  → 返回 { id, data: NodeData }[]
+  → 返回 NodeData[]
 ```
 
 - 根节点 id 固定为 `"root"`，`getChildrenWithData("root")` 时不传 folderId（或传 0）
@@ -112,7 +128,22 @@ onDrop(draggedItems, target)
 
 ---
 
-## 六、新建文件夹策略
+## 六、真实后端接口
+
+当前已经落成的真实接口如下：
+
+- `POST /collection/folder`：新建文件夹
+- `POST /collection/file`：新建文档
+- `PUT /collection/folder/rename`：重命名文件夹
+- `PUT /collection/file/rename`：重命名文档
+- `PUT /collection/move`：移动文档或文件夹到目标文件夹
+- `GET /collection/list?folderId=...`：获取某个文件夹下的直接子节点，不传 `folderId` 时读取根节点
+- `DELETE /collection/file/:id`：删除文档
+- `DELETE /collection/folder/:id`：删除文件夹及其全部子孙节点
+
+后端使用 Node 原生 `http` 实现，数据保存在本地 JSON 文件中，重启服务后仍能保留上一次操作结果。
+
+## 七、新建文件夹策略
 
 1. 调用 `POST /collection/folder { name }` 获得新 `folderId`
 2. 构造 `NodeData`，调 `tree.getItemInstance(parentId).updateCachedChildrenIds([...oldIds, newId])`
@@ -123,7 +154,7 @@ onDrop(draggedItems, target)
 
 ---
 
-## 七、删除策略
+## 八、删除策略
 
 1. 调用删除接口
 2. 从父节点缓存中移除该 id：`parent.updateCachedChildrenIds(newIds)`
@@ -133,16 +164,16 @@ onDrop(draggedItems, target)
 
 ---
 
-## 八、重命名策略
+## 九、重命名策略
 
 使用 `renamingFeature`：
-- 双击节点触发 `item.startRenaming()`
-- `onRename(item, value)` 中调用 `PUT /collection/folder { folderId, name }`
-- 成功后 `item.updateCachedData({ ...item.getItemData(), name: value })`
+- 双击或右键节点触发 `item.startRenaming()`
+- `onRename(item, value)` 中按节点类型调用文件夹 / 文档重命名接口
+- 成功后同步更新本地缓存，并对父节点重新排序
 
 ---
 
-## 九、关键 API 速查
+## 十、关键 API 速查
 
 ```ts
 // 懒加载
